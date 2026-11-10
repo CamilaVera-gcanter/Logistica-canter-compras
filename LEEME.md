@@ -9,17 +9,24 @@ plantilla de importación de **Sub tareas** de Browix.
 | `app.py` | Interfaz web (carga, asignación de transportistas, vista previa, descarga) |
 | `transformador.py` | Lógica de transformación (lectura, limpieza, mapeo, exportación) |
 | `requirements.txt` | Librerías necesarias |
+| `assets/logo_grupo_canter.png` | Logo de Grupo Canter que se muestra en la app |
 
 ## Mapeo de columnas
 | Browix | Origen en Monday |
 |---|---|
 | Tarea | `Proveedor Elegido` + " - " + `Name` (obra) |
-| Agrupador Tarea | `Numero OC` |
-| Fecha | Columna de fecha elegida (por defecto `Fecha Tarea Browix` si tiene datos, si no `Fecha estimada Entrega S/Proveedo`), como texto dd/mm/aaaa |
-| Dni responsable | DNI del transportista asignado (tabla TRANSPORTISTAS) |
+| Agrupador Tarea | **N° de tarea de Browix** asignado a cada OC en la app (manual o secuencial). Todas las sub-tareas de una OC llevan el mismo número |
+| Fecha | Siempre `Fecha estimada Entrega S/Proveedor`, como texto dd/mm/aaaa |
+| Dni responsable | DNI del transportista asignado (tabla de la barra lateral de la app) |
 | Subtarea | `Item / Producto` |
 | Detalle Subtarea | `FALTANTE` |
-| Detalle / Observaciones | Vacías |
+| Detalle | Vacía |
+| Observaciones | `Numero OC` |
+
+El Excel exportado tiene **una sola hoja** (`Sub tarea`). La tabla de transportistas solo vive en la app.
+
+## Numeración de tareas
+En el paso 2 de la app se carga el **N° de tarea para la primera OC** (continuando la numeración de la última tarea cargada en Browix). Con la opción *Numerar las siguientes OC en forma secuencial* activa, cada OC siguiente recibe +1. Cualquier número se puede corregir a mano en la tabla. La descarga se habilita cuando todas las OC tienen número.
 
 ## Instalación (una sola vez)
 1. Instalar Python 3.10 o superior desde https://www.python.org (en Windows, tildar **"Add Python to PATH"**).

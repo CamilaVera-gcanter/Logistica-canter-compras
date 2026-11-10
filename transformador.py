@@ -54,6 +54,14 @@ ALIAS_MONDAY = {
     "item": ["item / producto", "item/producto", "item", "producto", "descripcion"],
     "faltante": ["faltante"],
     "estado": ["estado"],
+    # Columna de la que SIEMPRE se toma la "Fecha" para Browix.
+    # Monday a veces corta el encabezado ("...S/Proveedo"), por eso van ambas variantes.
+    "fecha_entrega": [
+        "fecha estimada entrega s/proveedor",
+        "fecha estimada entrega s/proveedo",
+        "fecha estimada entrega s/ proveedor",
+        "fecha estimada entrega",
+    ],
     # Columnas donde puede venir escrita la persona / DNI asignado
     "dni": ["dni", "dni responsable"],
     "persona": ["nombre apellido", "logistica", "transportista", "responsable"],
@@ -292,8 +300,18 @@ def preparar_items(
     """
     df = limpiar_monday(df_monday)
 
-    cols = {k: buscar_columna(df, k) for k in ("obra", "proveedor", "oc", "item", "faltante", "dni")}
-    faltan = [k for k in ("obra", "proveedor", "oc", "item") if cols[k] is None]
+    cols = {k: buscar_columna(df, k)
+            for k in ("obra", "proveedor", "oc", "item", "faltante", "dni", "fecha_entrega")}
+
+    # La Fecha sale SIEMPRE de "Fecha estimada Entrega S/Proveedor",
+    # salvo que se pase explícitamente otra columna o una fecha fija.
+    if columna_fecha is None and fecha_fija is None:
+        columna_fecha = cols["fecha_entrega"]
+
+    obligatorias = ["obra", "proveedor", "oc", "item"]
+    if fecha_fija is None and columna_fecha is None:
+        obligatorias.append("fecha_entrega")
+    faltan = [k for k in obligatorias if cols[k] is None]
     if faltan:
         raise ValueError(
             "No se encontraron estas columnas en el Excel de Monday: "
@@ -321,7 +339,9 @@ def preparar_items(
 
         filas.append({
             "Tarea": tarea,
-            "Agrupador Tarea": a_entero_o_texto(f[cols["oc"]]),
+            # El N° de OC NO es el agrupador de Browix: se guarda aparte y
+            # termina en la columna "Observaciones" (ver construir_browix).
+            "OC": a_entero_o_texto(f[cols["oc"]]),
             "Fecha": fecha.strftime(FORMATO_FECHA) if fecha else "",
             "Transportista": transportista_sugerido(f, cols, transportistas),
             "Subtarea": texto(f[cols["item"]]),
@@ -331,13 +351,16 @@ def preparar_items(
 
 
 def asignaciones_por_oc(items: pd.DataFrame) -> pd.DataFrame:
-    """Una fila por OC con el transportista sugerido (el más frecuente)."""
+    """
+    Una fila por OC (en el orden en que aparecen en Monday) con:
+    Tarea, cantidad de ítems y transportista sugerido (el más frecuente).
+    """
     def primero_no_vacio(s):
         s = [x for x in s if x]
         return max(set(s), key=s.count) if s else ""
 
     return (
-        items.groupby("Agrupador Tarea", sort=False, dropna=False)
+        items.groupby("OC", sort=False, dropna=False)
         .agg(Tarea=("Tarea", "first"),
              Items=("Subtarea", "count"),
              Transportista=("Transportista", primero_no_vacio))
@@ -345,27 +368,56 @@ def asignaciones_por_oc(items: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def numerar_secuencial(ocs, inicio: int) -> dict:
+    """
+    Asigna números de tarea consecutivos a cada OC, empezando en `inicio`.
+    Ej.: ocs=[15028, 14751, 14736], inicio=500 -> {15028: 500, 14751: 501, 14736: 502}
+    """
+    return {oc: int(inicio) + i for i, oc in enumerate(ocs)}
+
+
+def a_numero_tarea(valor) -> int | None:
+    """Limpia el N° de tarea ingresado por el usuario (vacío o inválido -> None)."""
+    if valor is None or valor is pd.NA or (isinstance(valor, float) and pd.isna(valor)):
+        return None
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return None
+    return int(numero) if numero.is_integer() and numero > 0 else None
+
+
 def construir_browix(
     items: pd.DataFrame,
     transportistas: dict[str, int],
     asignacion_oc: dict | None = None,
+    numeros_tarea: dict | None = None,
 ) -> pd.DataFrame:
     """
     Devuelve el DataFrame final con las columnas exactas de Browix.
-    `asignacion_oc` = {numero_oc: nombre_transportista} elegido en la app;
-    tiene prioridad sobre lo sugerido automáticamente.
+
+    - `asignacion_oc` = {numero_oc: nombre_transportista} elegido en la app;
+      tiene prioridad sobre lo sugerido automáticamente.
+    - `numeros_tarea` = {numero_oc: numero_de_tarea_browix}. Ese número va en
+      "Agrupador Tarea": todas las sub-tareas de una misma OC quedan en la
+      misma tarea de Browix.
+    - El N° de OC va en "Observaciones".
     """
     salida = items.copy()
     if asignacion_oc:
         salida["Transportista"] = [
             asignacion_oc.get(oc) or t
-            for oc, t in zip(salida["Agrupador Tarea"], salida["Transportista"])
+            for oc, t in zip(salida["OC"], salida["Transportista"])
         ]
+    numeros_tarea = numeros_tarea or {}
+    salida["Agrupador Tarea"] = salida["OC"].map(
+        lambda oc: a_numero_tarea(numeros_tarea.get(oc))
+    ).astype("Int64")
     salida["Dni responsable"] = salida["Transportista"].map(
         lambda n: transportistas.get(n) if n else None
     ).astype("Int64")
     salida["Detalle "] = ""
-    salida["Observaciones"] = ""
+    salida["Observaciones"] = salida["OC"]
     return salida[COLUMNAS_BROWIX]
 
 
@@ -373,10 +425,10 @@ def construir_browix(
 # 6. EXPORTACIÓN A EXCEL
 # ---------------------------------------------------------------------------
 
-def exportar_excel(df_browix: pd.DataFrame, transportistas: dict[str, int]) -> bytes:
+def exportar_excel(df_browix: pd.DataFrame) -> bytes:
     """
-    Genera el .xlsx listo para importar en Browix (hoja "Sub tarea") y agrega
-    la pestaña TRANSPORTISTAS como referencia, igual que la plantilla original.
+    Genera el .xlsx listo para importar en Browix: una única hoja "Sub tarea".
+    La tabla de transportistas NO se exporta (solo vive en la app).
     """
     wb = Workbook()
     ws = wb.active
@@ -402,16 +454,6 @@ def exportar_excel(df_browix: pd.DataFrame, transportistas: dict[str, int]) -> b
     for col, ancho in anchos.items():
         ws.column_dimensions[col].width = ancho
     ws.freeze_panes = "A2"
-
-    # Pestaña de referencia de transportistas
-    wt = wb.create_sheet("TRANSPORTISTAS")
-    wt.append(["NOMBRE", "DNI"])
-    for celda in wt[1]:
-        celda.font = Font(bold=True)
-    for nombre, dni in transportistas.items():
-        wt.append([nombre, dni])
-    wt.column_dimensions["A"].width = 20
-    wt.column_dimensions["B"].width = 14
 
     buffer = io.BytesIO()
     wb.save(buffer)
