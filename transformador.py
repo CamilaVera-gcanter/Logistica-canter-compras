@@ -40,8 +40,8 @@ HOJA_BROWIX = "Sub tarea"
 # Tabla de transportistas integrada (copiada de la pestaña "TRANSPORTISTAS").
 # Se puede ampliar desde la app o subiendo la plantilla de Browix.
 TRANSPORTISTAS_DEFAULT = {
-    "DAMI": 26817879,
-    "CRIS": 30473183,
+    "DAMIAN FARIAS": 26817879,
+    "CHRISTIAN LEDESMA": 30473183,
 }
 
 # Nombres posibles de cada columna del export de Monday.
