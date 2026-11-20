@@ -41,7 +41,8 @@ HOJA_BROWIX = "Sub tarea"
 # Se puede ampliar desde la app o subiendo la plantilla de Browix.
 TRANSPORTISTAS_DEFAULT = {
     "DAMIAN FARIAS": 26817879,
-    "CHRISTIAN LEDESMA": 30473183,
+   "MAXIMO LEDESMA": 47985044,
+    "CHRISTIAN LEDESMA": 23824728, 
 }
 
 # Nombres posibles de cada columna del export de Monday.
